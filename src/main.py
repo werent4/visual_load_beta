@@ -3,7 +3,7 @@ import paho.mqtt.client as mqtt
 
 TOPIC = "show_load"
 PORT = 1883
-mqtt_server = "10.0.59.200"
+mqtt_server = "10.0.58.100"
 USERNAME = "werent4_test"
 PASSWORD = "werent4test"
 
@@ -59,7 +59,7 @@ def main():
         client.publish(TOPIC, msg)
 
         print(msg)
-        time.sleep(2)
+        time.sleep(3)
 
 if __name__ == "__main__":
     main()
