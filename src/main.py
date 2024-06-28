@@ -1,32 +1,7 @@
-import time, json, psutil
+import time, json, psutil, requests, argparse
 import paho.mqtt.client as mqtt
 
-TOPIC = "show_load"
-PORT = 1883
-mqtt_server = "10.0.58.100"
-USERNAME = "werent4_test"
-PASSWORD = "werent4test"
-
-def on_connect(client, userdata, flags, rc):
-    print("Connected with result code "+str(rc))
-    client.subscribe(TOPIC)
-
-def on_message(client, userdata, msg):
-    print(f"Received message '{str(msg.payload)}' on topic '{msg.topic}' with QoS {str(msg.qos)}")
-
-def reconnect(client):
-    while not client.is_connected():
-        print("Trying to connect to MQTT broker...")
-        try:
-            client.connect(mqtt_server, PORT, 60)
-            print("Succesfully connected")
-            break
-        except Exception as e:
-            print("Connection failed, trying again in 5 seconds...")
-            time.sleep(5)
-
-
-def send_memory_usage():
+def get_memory_usage():
     memory = psutil.virtual_memory()
     used_memory = memory.used / (1024 ** 3)  
     available_memory = memory.total / (1024 ** 3)  
@@ -40,26 +15,24 @@ def send_memory_usage():
         "CPU":message_cpu,
         "GPU":"--/--GB"
                 }
-    return json.dumps(full_msg)
+    return full_msg
 
-def main():
-    client = mqtt.Client()
-    client.username_pw_set(USERNAME, PASSWORD)
-    client.on_connect = on_connect
-    client.on_message = on_message
+def send_memory_usage(ip: str):
+    url = f'http://{ip}:80/data'
+    headers = {'Content-Type': 'application/json'}
+    full_msg = get_memory_usage()
+    response = requests.post(url, headers=headers, json=full_msg)
+    print(f"Status Code: {response.status_code}, Response: {response.text}")
 
-    reconnect(client) 
 
+def main(args):
     while True:
-        if not client.is_connected():
-            reconnect(client)
-        client.loop()
+        send_memory_usage(args.IP)
+        time.sleep(2)
 
-        msg = send_memory_usage()
-        client.publish(TOPIC, msg)
-
-        print(msg)
-        time.sleep(3)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Enter IP addr")
+    parser.add_argument("--IP", default= "192.168.20.100" ,type=str, help="Name of the dataset to use")
+    args = parser.parse_args()
+    main(args)

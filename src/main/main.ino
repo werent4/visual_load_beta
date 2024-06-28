@@ -23,12 +23,15 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
 
 bool runServer = false; // start server flag
 bool serverStarted = false; // monitor server state
+bool server_postStarted = false; // monitor post handler server state
 
 //##========= WebServer INI  ========= ##
 WebServer server(80);
+WebServer server_post(80);
 
 //##========= WebServer FUNCTIONS  ========= ##
 void startWebServer();
+void startWevserver_post();
 void handleRoot();
 void handleSave();
 
@@ -40,20 +43,6 @@ WiFiClient espClient;
 
 //##========= WiFi FUNCTIONS  ========= ##
 void setup_wifi();
-
-//##========= MQTT INI  ========= ##
-const int PORT = 1883;
-const char* mqtt_server = "10.0.58.100";
-const char* USERNAME = "werent4_test";
-const char* PASSWORD = "werent4test";
-const char* TOPIC = "show_load";
-
-//##========= MQTT FUNCTIONS  ========= ##
-void callback(char* topic, byte* message, unsigned int length);
-void reconnect();
-
-PubSubClient client(mqtt_server, PORT, callback, espClient);
-
 
 //##========= Memory managment FUNCTIONS  ========= ## 
 void updateGlobalCredentials(const char* ssid, const char* password);
@@ -136,31 +125,22 @@ void setup() {
         startWebServer();
     }
 
-  //##========= MQTT INITIAL STATE!  ========= ## 
-  client.setServer(mqtt_server, PORT);
-  client.setCallback(callback);
-  client.setKeepAlive(60);
-  //##========= ========= ========= ##
-
 }
 
 void loop() {
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
-
   if (serverStarted) {
       server.handleClient();
   }
+  if(server_postStarted){
+    server_post.handleClient();
+  }
 
   if (WiFi.status() != WL_CONNECTED){
+    server_post.stop();
+    server_postStarted = false;
     startWebServer();
   }
   else{
-    server.stop();
-    serverStarted = false;
-
     tft.fillRect(X_INI + 55, Y_INI + 18, 165, 92, ST77XX_BLACK);// Clean
 
     drawtext(RAM.c_str(), CUSTOM_GREEN, X_INI + 80, Y_INI + 20, FONT_SIZE); // RAM
@@ -186,7 +166,7 @@ void startWebServer(){
   if (!serverStarted){
     WiFi.mode(WIFI_OFF);
     tft.fillRect(X_INI + 55, Y_INI + 18, 165, 92, ST77XX_BLACK);// Clean
-    drawtext("NO WiFi", CUSTOM_GREEN, X_INI + 80, Y_INI + 50, FONT_SIZE);
+    drawtext("NO WiFi,", CUSTOM_GREEN, X_INI + 80, Y_INI + 50, FONT_SIZE);
     delay(15);
     drawtext("CONFIGURE", CUSTOM_GREEN, X_INI + 80, Y_INI + 65, FONT_SIZE);
     tft.drawRGBBitmap(204, 116, no_wifi_data, 15, 15);
@@ -205,6 +185,16 @@ void startWebServer(){
     Serial.println("HTTP server started");
     serverStarted = true;
   }  
+}
+
+void startWevserver_post(){
+  if (!server_postStarted){
+    server_post.on("/data", HTTP_POST, handlePost);
+    server_post.begin();
+    Serial.println("HTTP server for POST requests started");
+    server_postStarted = true;
+  }
+
 }
 
 void handleRoot() {
@@ -228,6 +218,56 @@ void handleSave() {
 
   server.send(200, "text/plain", "Saved SSID and Password");
 }
+
+void handlePost() {
+    if (server_post.hasArg("plain") == false) { // Проверяем, есть ли данные в запросе
+        server_post.send(500, "text/plain", "Server cannot parse POST data");
+        return;
+    }
+
+    // Получаем содержимое тела запроса
+    String postBody = server_post.arg("plain");
+
+    // Объект для парсинга JSON
+    DynamicJsonDocument doc(1024);
+    auto error = deserializeJson(doc, postBody);
+
+    if (error) {
+        Serial.print("deserializeJson() failed: ");
+        Serial.println(error.c_str());
+        server_post.send(500, "text/plain", "JSON parsing failed: " + String(error.c_str()));
+        return;
+    }
+
+    // Извлекаем данные из JSON
+    const char* newRAM = doc["RAM"];
+    const char* newCPU = doc["CPU"];
+    const char* newGPU = doc["GPU"];
+
+    // Update RAM
+    if (String(newRAM) != RAM) {
+        RAM = String(newRAM);
+        Serial.println("Updated RAM: " + RAM);
+    }
+
+    // Update CPU
+    if (String(newCPU) != CPU) {
+        CPU = String(newCPU);
+        Serial.println("Updated CPU: " + CPU);
+    }
+
+    // Update GPU
+    if (String(newGPU) != GPU) {
+        GPU = String(newGPU);
+        Serial.println("Updated GPU: " + GPU);
+    }
+
+    // Логика обработки данных
+    Serial.printf("Received value: RAM=%s, CPU=%s, GPU=%s\n", newRAM, newCPU, newGPU);
+
+    server_post.send(200, "text/plain", "Data successfully received and processed");
+}
+
 
 //##========= WiFi FUNCTIONS  ========= ##
 void setup_wifi() {
@@ -266,81 +306,11 @@ void setup_wifi() {
     Serial.println(WiFi.localIP());
     tft.drawRGBBitmap(204, 116, wifi_data, 15, 15);
 
-    reconnect();
+    startWevserver_post();
+    
   }
 }
 
-//##========= MQTT FUNCTIONS  ========= ##
-void callback(char* topic, byte* message, unsigned int length) {
-  Serial.print("Message arrived on topic: ");
-  Serial.print(topic);
-  Serial.println(". Message: ");
-  String message_mqtt;
-
-
-  if (String(topic) == TOPIC){
-    char json[length + 1];
-    strncpy(json, (char*)message, length);
-    json[length] = '\0';
-
-    StaticJsonDocument<200> doc;
-    DeserializationError error = deserializeJson(doc, json);
-
-    if (error) {
-      Serial.print("deserializeJson() failed: ");
-      Serial.println(error.c_str());
-      return;
-    } 
-
-    const char* newRAM = doc["RAM"];
-    const char* newCPU = doc["CPU"];
-    const char* newGPU = doc["GPU"];
-
-    // Update RAM
-    if (String(newRAM) != RAM) {
-        RAM = String(newRAM);
-        Serial.println("Updated RAM: " + RAM);
-    }
-
-    // Update CPU
-    if (String(newCPU) != CPU) {
-        CPU = String(newCPU);
-        Serial.println("Updated CPU: " + CPU);
-    }
-
-    // Update GPU
-    if (String(newGPU) != GPU) {
-        GPU = String(newGPU);
-        Serial.println("Updated GPU: " + GPU);
-    }
-  }
-  else{
-    for (int i = 0; i < length; i++) {
-      message_mqtt += (char)message[i];
-    }
-    Serial.print(message_mqtt);
-  }
-}
-
-void reconnect() {
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    String clientId = "ESP32S3Client-";
-    clientId += String(random(0xffff), HEX);
-
-    if (client.connect(clientId.c_str(), USERNAME, PASSWORD))  {
-      Serial.println("connected");
-      // resubscribe
-      client.subscribe(TOPIC);
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-
-      delay(5000);
-    }
-  }
-}
 
 //##========= Memory managment FUNCTIONS  ========= ## 
 void updateGlobalCredentials(const char* ssid, const char* password) {
