@@ -141,14 +141,20 @@ void loop() {
     startWebServer();
   }
   else{
-    tft.fillRect(X_INI + 55, Y_INI + 18, 165, 92, ST77XX_BLACK);// Clean
+    if (RAM == "" && CPU == "" &&  GPU == ""){ // Draw IP only when no data recived
+    tft.fillRect(X_INI + 55, Y_INI + 18, 168, 92, ST77XX_BLACK);// Clean
+
+    drawtext(WiFi.localIP().toString().c_str(), CUSTOM_GREEN, X_INI + 60, Y_INI + 60, FONT_SIZE - 1); // Draw IP in local network
+    }
+    else{
+    tft.fillRect(X_INI + 55, Y_INI + 18, 168, 92, ST77XX_BLACK);// Clean
 
     drawtext(RAM.c_str(), CUSTOM_GREEN, X_INI + 80, Y_INI + 20, FONT_SIZE); // RAM
     drawtext(CPU.c_str(), CUSTOM_GREEN, X_INI + 80, Y_INI + 60, FONT_SIZE); // CPU
     drawtext(GPU.c_str(), CUSTOM_GREEN, X_INI + 57, Y_INI + 93, FONT_SIZE); // GPU
-
-    delay(500);
+    }
   }
+  delay(500);
 }
 //##========= SCREEN FUNCTIONS  ========= ##
 
@@ -165,7 +171,7 @@ void drawtext(const char *text, uint16_t color, int w, int h, int s) {
 void startWebServer(){
   if (!serverStarted){
     WiFi.mode(WIFI_OFF);
-    tft.fillRect(X_INI + 55, Y_INI + 18, 165, 92, ST77XX_BLACK);// Clean
+    tft.fillRect(X_INI + 55, Y_INI + 18, 168, 92, ST77XX_BLACK);// Clean
     drawtext("NO WiFi,", CUSTOM_GREEN, X_INI + 80, Y_INI + 50, FONT_SIZE);
     delay(15);
     drawtext("CONFIGURE", CUSTOM_GREEN, X_INI + 80, Y_INI + 65, FONT_SIZE);
